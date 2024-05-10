@@ -1,10 +1,13 @@
-// ImageArray - allows multiple image upload with editor
-import ImageArray from './ImageArray.svelte';
+const WIDGET_NAME = 'ImageArray' as const;
+
 import ImageUpload from '../imageUpload';
 
 import { getFieldName, getGuiFields } from '@utils/utils';
 import type { Params as ImageUpload_Params } from '../imageUpload/types';
 import { type Params, GuiSchema, GraphqlSchema } from './types';
+
+import type { ModifyRequestParams } from '..';
+import widgets from '..';
 
 //ParaglideJS
 import * as m from '@src/paraglide/messages';
@@ -38,8 +41,7 @@ const widget = (params: Params) => {
 
 	// Define the widget object
 	const widget = {
-		type: ImageArray,
-		key: 'ImageArray' as const,
+		Name: WIDGET_NAME,
 		GuiFields: getGuiFields(params, GuiSchema)
 	};
 
@@ -72,7 +74,27 @@ const widget = (params: Params) => {
 	return { ...field, widget };
 };
 
-// Assign GuiSchema and GraphqlSchema to the widget function
+widget.modifyRequest = async ({ field, data, user, type, id, collection, meta_data }: ModifyRequestParams<typeof widget>) => {
+	const _data = data.get();
+	console.log('data:', _data);
+	return;
+	for (const _field of field.fields) {
+		const widget = widgets[_field.widget.Name];
+		if ('modifyRequest' in widget) {
+			await widget.modifyRequest({
+				collection,
+				field: _field as ReturnType<typeof widget>,
+				data: _data[getFieldName(_field)],
+				user,
+				type,
+				id
+			});
+		}
+	}
+};
+
+// Assign Name, GuiSchema and GraphqlSchema to the widget function
+widget.Name = WIDGET_NAME;
 widget.GuiSchema = GuiSchema;
 widget.GraphqlSchema = GraphqlSchema;
 

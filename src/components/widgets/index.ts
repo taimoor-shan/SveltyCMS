@@ -1,9 +1,10 @@
 import type mongoose from 'mongoose';
+
 // Auth
 import type { Model, User } from '@src/auth/types';
 
 // Widgets
-// import Address from './address';
+import Address from './address';
 import Checkbox from './checkbox';
 import Currency from './currency';
 import ColorPicker from './colorPicker';
@@ -24,14 +25,14 @@ import Radio from './radio';
 import Rating from './rating';
 import Relation from './relation';
 import RemoteVideo from './remoteVideo';
-//import RichText from './richText';
+import RichText from './richText';
 // import SelectList from './selectList';
 import Seo from './seo';
 import Text from './text';
 
 // Define the widget object
 const widgets = {
-	// Address, // Address flexible Address fields
+	Address, // Address flexible Address fields
 	Checkbox, // Checkbox - boolean true / false checkbox
 	ColorPicker, // Color Picker - choice of color
 	Currency, // Currency - define input with a currency string and suffix
@@ -50,7 +51,8 @@ const widgets = {
 	Rating, // Relation - assign relationships to other collections
 	Relation, // Rating - Visual representation of a numeric range.
 	RemoteVideo, // RemoteVideo - for youtube/vimeo(/Twitch/ticktock), grabbing Title/Duration,Dimension,User
-	// RichText, // Rich Text - fully extensible Lexical Rich Text editor
+	RichText, // Rich Text - fully extensible Lexical Rich Text editor
+	// RichTextLexical, // Lexical Rich Text - fully extensible Lexical Rich Text editor
 	// SelectList, // SelectList - dropdown / pick list style value selector
 	Seo, // Seo - Basic Seo Title /Description with preview
 	Text // Text - A Simple text input
@@ -58,8 +60,10 @@ const widgets = {
 	// Url // Url - Link to internal / External hyperlinks
 };
 
-type K = ReturnType<(typeof widgets)[keyof typeof widgets]>['widget']['key'];
+// Define the widget types
+type K = (typeof widgets)[keyof typeof widgets]['Name'];
 
+// Define the modifyRequest function
 export type ModifyRequestParams<T extends (...args: any) => any> = {
 	collection: Model;
 	id?: mongoose.Types.ObjectId;
@@ -67,13 +71,27 @@ export type ModifyRequestParams<T extends (...args: any) => any> = {
 	data: { get: () => any; update: (newData) => void };
 	user: User;
 	type: 'GET' | 'POST' | 'DELETE' | 'PATCH';
+	meta_data?: { [key: string]: any };
 };
 
+// Define the widget type
 export type WidgetType = {
 	[key in K]: (typeof widgets)[key] & {
 		modifyRequest: (args: ModifyRequestParams<(typeof widgets)[keyof typeof widgets]>) => Promise<{}>;
 	};
 };
 
+// Expose the widgets
 export const initWidgets = () => (globalThis.widgets = widgets);
+initWidgets();
 export default widgets as WidgetType;
+
+// Expose the widget context
+export const widgetContext = Object.keys(widgets).map((key) => {
+	const name = widgets[key].Name as K;
+	return {
+		[name]: {
+			run() {}
+		}
+	};
+});

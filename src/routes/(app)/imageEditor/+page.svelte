@@ -47,8 +47,8 @@
 	}
 </script>
 
-<div class="flex items-center justify-between">
-	<PageTitle name="Image Editor" icon="bi:images" />
+<div class="my-2 flex items-center justify-between">
+	<PageTitle name="Image Editor" icon="tdesign:image-edit" />
 
 	<!-- buttons -->
 	<div class="mb-2 flex items-center gap-2">

@@ -1,3 +1,5 @@
+import mongoose from 'mongoose';
+
 // Components
 import IconifyPicker from '@components/IconifyPicker.svelte';
 import Input from '@src/components/system/inputs/Input.svelte';
@@ -8,16 +10,12 @@ import Permission from '@src/components/Permission.svelte';
 import type { Permissions } from '@src/auth/types';
 import GuiField from './GuiField.svelte';
 
-import type { CollectionLabels } from '@src/collections/types';
-
 import { getFieldName } from '@utils/utils';
-
-import mongoose from 'mongoose';
 
 /**
  * Defines Relation widget Parameters
  */
-export type Params = {
+export type Params<K, T> = {
 	// default required parameters
 	label: string;
 	display?: DISPLAY;
@@ -34,7 +32,7 @@ export type Params = {
 
 	// Widget Specific parameters
 	displayPath: any;
-	relation: CollectionLabels;
+	relation: T;
 };
 
 /**

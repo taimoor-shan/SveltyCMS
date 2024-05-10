@@ -89,48 +89,23 @@ We recommend the faster [pnpm](https://pnpm.io) package manager. [Yarn](https://
 
 ```bash
 npm install   # installs all required package dependencies
-
-# If Post Install script is disabled, then also run the following
-# npm run inlang    # build available system languages
 ```
 
-### Setup Environment Variables
+### Setup via CLI Installer
 
 This project uses a public/private configuration to store sensitive information, such as API keys and database passwords.
 
-To set up the project, you will need to create two files in the project root directory:
-
-The `config` folder contains two example configuration files that you can rename to get started. Typescript helps you with code completion.
-
-### Create `config/private.ts` and `config/public.ts`
+To set up the SvelteCMC project, you just need to start the CLI Installer. Minium requirements are a Database and Email to get started :
 
 ```bash
-mv config/example.private.ts config/private.ts
-mv config/example.public.ts config/public.ts
+npm run installer
 ```
 
-The `config/private.ts` contain sensitive information that you do not want to expose to the public. This includes things like: Database & Email configs, API keys, Secret tokens.
+### Start the application for development or production once CLI Installer was run.
 
-```typescript
-import { createPrivateConfig } from './types';
-export const privateEnv = createPrivateConfig({
+See our `package.json` for more information like development, build, preview, format, lint & testing.
 
-	// private configuration settings
-}) => arg;
-```
-
-The `config/public.ts` contains configuration settings that are safe to share with the public, This includes things like: Site name, Language handling, Media configurations.
-
-```typescript
-import { createPublicConfig } from './types';
-export const publicEnv = createPrivateConfig({
-	// public configuration settings
-}) => arg;
-```
-
-### Start the application for development or production
-
-See our `package.json` for more information like development, build, preview, format, lint & testing. Here the most used commands:
+Here the most used commands:
 
 ```bash
 npm run dev       # run development on localhost:5173
@@ -144,7 +119,7 @@ We want to keep your data Private and Secure.
 
 Our Authentication allows us to stay flexible for the future and adapt to changing security needs.
 
-You can sign by email and password or use google oauth.
+You can sign by email and password tot he SveltyCMS or use google oauth.
 
 Field-based content access enables the allocation of varying levels of access to users according to their roles and permissions. This way, you can control who can view, edit, or delete your data.
 

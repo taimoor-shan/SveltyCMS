@@ -1,17 +1,19 @@
 <script lang="ts">
 	import { publicEnv } from '@root/config/public';
 	import type { MediaImage } from '@src/utils/types';
-	import { SIZES, formatBytes } from '@src/utils/utils';
+	import { formatBytes } from '@src/utils/utils';
 	import axios from 'axios';
+	import { goto } from '$app/navigation';
 
 	// ParaglideJS
 	import * as m from '@src/paraglide/messages';
 
 	// Components
-	import PageTitle from './PageTitle.svelte';
+	import PageTitle from '@components/PageTitle.svelte';
 
 	// Skeleton
-	import { Avatar, popup, modeCurrent, type PopupSettings, setModeUserPrefers, setModeCurrent } from '@skeletonlabs/skeleton';
+	import { getToastStore, popup, type PopupSettings } from '@skeletonlabs/skeleton';
+	const toastStore = getToastStore();
 
 	// Popup Tooltips
 	const FileTooltip: PopupSettings = {
@@ -22,7 +24,24 @@
 
 	export const onselect: any = () => {};
 	let files: MediaImage[] = [];
-	axios.get('/media/getAll').then((res) => (files = res.data));
+
+	// Get all media files
+	axios
+		.get('/media/getAll')
+		.then((res) => {
+			if (Array.isArray(res.data)) {
+				files = res.data.map((file) => ({
+					...file.file,
+					type: file.type // Ensure this matches your server response
+				}));
+			} else {
+				files = [];
+			}
+		})
+		.catch((error) => {
+			console.error('Error fetching media files:', error);
+			files = [];
+		});
 
 	let globalSearchValue = ''; // Initialize your search value
 
@@ -31,7 +50,6 @@
 		(file) =>
 			file.thumbnail.name.toLowerCase().includes(globalSearchValue.toLowerCase()) && (selectedMediaType === 'All' || file.type === selectedMediaType)
 	);
-	// $: filteredFiles = files.filter((file) => file.thumbnail.name.toLowerCase().includes(globalSearchValue.toLowerCase()));
 
 	let showInfo = Array.from({ length: files.length }, () => false);
 	// Define orderedSizes
@@ -104,7 +122,28 @@
 
 			if (response.ok) {
 				// Image was successfully deleted
+
+				// Trigger the toast
+				const t = {
+					message: '<iconify-icon icon="mdi:check-outline" color="white" width="26" class="mr-1"></iconify-icon> Image deleted successfully.',
+					// Provide any utility or variant background style:
+					background: 'gradient-tertiary',
+					timeout: 3000,
+					// Add your custom classes here:
+					classes: 'border-1 !rounded-md'
+				};
+				toastStore.trigger(t);
 			} else {
+				// Trigger the toast
+				const t = {
+					message: '<iconify-icon icon="material-symbols:error" color="white" width="26" class="mr-1"></iconify-icon> Image was not deleted.',
+					// Provide any utility or variant background style:
+					background: 'gradient-error',
+					timeout: 3000,
+					// Add your custom classes here:
+					classes: 'border-1 !rounded-md'
+				};
+				toastStore.trigger(t);
 				// Handle error
 				console.error('Error deleting image:', response.statusText);
 			}
@@ -193,24 +232,29 @@
 
 	// Define media types
 	const mediaTypes = ['All', 'Image', 'Document', 'Audio', 'Video', 'RemoteVideo'];
+
 	// Reactive variable for selected media type
 	let selectedMediaType = 'All';
 </script>
 
-<div class="flex items-center justify-between">
+<div class="my-2 flex items-center justify-between">
 	<PageTitle name={m.mediagallery_pagetitle()} icon="bi:images" iconColor="text-tertiary-500 dark:text-primary-500" />
+	<button class="variant-filled-primary btn gap-2" on:click={() => goto('/mediagallery/uploadMedia')}>
+		<iconify-icon icon="carbon:add-filled" width="24" />
+		{m.MediaGallery_Add()}
+	</button>
 </div>
 
 <div class="wrapper overflow-auto">
 	<div class="mb-2 flex items-center justify-between gap-2 md:gap-4">
-		<!-- Search/display -->
+		<!-- Header -->
 		<div class="mb-8 flex w-full flex-col justify-center gap-1">
-			<label for="media-type">Search</label>
-			<div class="input-group input-group-divider grid grid-cols-[auto_1fr_auto]">
+			<label for="media-type">{m.MediaGallery_Search()}</label>
+			<div class="input-group input-group-divider grid max-w-md grid-cols-[auto_1fr_auto]">
 				<!-- Search -->
 				<input
 					type="text"
-					placeholder="Search..."
+					placeholder={m.collections_search()}
 					class="input"
 					bind:value={globalSearchValue}
 					on:blur={() => (searchShow = false)}
@@ -235,7 +279,7 @@
 
 		<!-- Additional Media Type Filter -->
 		<div class="mb-8 flex flex-col justify-center gap-1">
-			<label for="media-type">Media Types</label>
+			<label for="media-type">{m.MediaGallery_Type()}</label>
 			<div class="input-group">
 				<select bind:value={selectedMediaType} class="">
 					{#each mediaTypes as type}
@@ -243,6 +287,14 @@
 					{/each}
 				</select>
 			</div>
+		</div>
+
+		<!-- Sort by -->
+		<div class="mb-8 flex flex-col justify-center gap-1 text-center">
+			<label for="media-type">Sort</label>
+			<button class="variant-ghost-surface btn">
+				<iconify-icon icon="flowbite:sort-outline" width="24" />
+			</button>
 		</div>
 
 		<div class="flex items-center justify-center gap-4">
@@ -271,7 +323,7 @@
 									{m.mediagallery_display()}
 								</p>
 								<iconify-icon icon="material-symbols:grid-view-rounded" height="42" style={`color: text-black dark:text-white`} />
-								<p class="text-xs">Table</p>
+								<p class="text-xs">{m.mediagallery_table()}</p>
 							</button>
 						{:else}
 							<button
@@ -342,7 +394,7 @@
 			<!-- Desktop -->
 			<!-- Display Grid / Table -->
 			<div class="hidden flex-col items-center sm:flex">
-				Display
+				{m.mediagallery_display()}
 				<div class="flex divide-x divide-gray-500">
 					<button
 						class="px-2"
@@ -359,7 +411,7 @@
 						}}
 					>
 						<iconify-icon icon="material-symbols:grid-view-rounded" height="40" style={`color: ${view === 'grid' ? 'black dark:white' : 'grey'}`} />
-						<br /> <span class="text-tertiary-500 dark:text-primary-500">Grid</span>
+						<br /> <span class="text-tertiary-500 dark:text-primary-500">{m.mediagallery_grid()}</span>
 					</button>
 					<button
 						class="px-2"
@@ -376,29 +428,29 @@
 						}}
 					>
 						<iconify-icon icon="material-symbols:list-alt-outline" height="40" style={`color: ${view === 'table' ? 'black dark:white' : 'grey'}`} />
-						<br /><span class="text-tertiary-500 dark:text-primary-500">Table</span>
+						<br /><span class="text-tertiary-500 dark:text-primary-500">{m.mediagallery_table()}</span>
 					</button>
 				</div>
 			</div>
 
 			<!-- Switch between small, medium, and large images -->
 			<div class="hidden flex-col items-center sm:flex">
-				Size
+				{m.mediagallery_size()}
 				<div class="flex divide-x divide-gray-500">
 					{#if (view === 'grid' && gridSize === 'small') || (view === 'table' && tableSize === 'small')}
 						<button type="button" class="px-1 md:px-2" on:click={handleClick}>
 							<iconify-icon icon="material-symbols:background-grid-small-sharp" height="40" />
-							<br /><span class="text-tertiary-500 dark:text-primary-500">Small</span>
+							<br /><span class="text-tertiary-500 dark:text-primary-500">{m.mediagallery_small()}</span>
 						</button>
 					{:else if (view === 'grid' && gridSize === 'medium') || (view === 'table' && tableSize === 'medium')}
 						<button type="button" class="px-1 md:px-2" on:click={handleClick}>
 							<iconify-icon icon="material-symbols:grid-on-sharp" height="40" />
-							<br /><span class="text-tertiary-500 dark:text-primary-500">Medium</span>
+							<br /><span class="text-tertiary-500 dark:text-primary-500">{m.mediagallery_medium()}</span>
 						</button>
 					{:else}
 						<button type="button" class="px-1 md:px-2" on:click={handleClick}>
 							<iconify-icon icon="material-symbols:grid-view" height="40" />
-							<br /><span class="text-tertiary-500 dark:text-primary-500">Large</span>
+							<br /><span class="text-tertiary-500 dark:text-primary-500">{m.mediagallery_large()}</span>
 						</button>
 					{/if}
 				</div>
@@ -409,76 +461,97 @@
 	<!-- Grid display -->
 	{#if view === 'grid'}
 		<div class="flex flex-wrap items-center gap-4 overflow-auto">
-			{#each filteredFiles as file, index}
-				<div
-					on:mouseenter={() => (showInfo[index] = true)}
-					on:mouseleave={() => (showInfo[index] = false)}
-					role="button"
-					tabindex="0"
-					class="card border border-surface-300 dark:border-surface-500"
-				>
-					<header class="m-2 flex w-auto items-center justify-between">
-						<!-- Info Icon -->
-						<button class="btn-icon" use:popup={FileTooltip}>
-							<iconify-icon icon="raphael:info" width="24" class="text-tertiary-500 dark:text-primary-500"></iconify-icon>
-						</button>
-
-						<!-- Popup Tooltip with the arrow element to show FileInfo -->
-						<div class="card variant-filled z-50 min-w-[250px] p-2" data-popup="FileInfo">
-							<table class="table-hover w-full table-auto">
-								<thead class="text-tertiary-500">
-									<tr class="divide-x divide-surface-400 border-b-2 border-surface-400 text-center">
-										<th class="text-left">Format</th>
-										<th class="">Pixel</th>
-										<th class="">Size</th>
-									</tr>
-								</thead>
-								<tbody>
-									{#each orderedSizes as size}
-										<tr class="divide-x divide-surface-400 border-b border-surface-400 last:border-b-0">
-											<td class="font-bold text-tertiary-500">
-												{size}
-											</td>
-											<td class="pr-1 text-right">
-												{file[size].width}x{file[size].height}
-											</td>
-											<td class="text-right">
-												{formatBytes(file[size].size)}
-											</td>
-										</tr>
-									{/each}
-								</tbody>
-								<div class="variant-filled arrow" />
-							</table>
-						</div>
-						<!--{#if showInfo[index]}-->
-						<!-- Edit button -->
-						<button class="btn-icon">
-							<iconify-icon icon="mdi:pen" width="24" class="data:text-primary-500 text-tertiary-500" />
-						</button>
-
-						<!-- Delete button -->
-						<button class="btn-icon" on:click={() => handleDeleteImage(file)}>
-							<!-- Delete Icon -->
-							<iconify-icon icon="icomoon-free:bin" width="24" class="text-error-500" />
-						</button>
-						<!--{/if}-->
-					</header>
-
-					<section class="p-2">
-						<!-- Media File -->
-						<img
-							src={file.thumbnail.url}
-							alt={file.thumbnail.name}
-							class={`relative -top-4 left-0 ${gridSize === 'small' ? 'h-26 w-26' : gridSize === 'medium' ? 'h-48 w-48' : 'h-80 w-80'}`}
-						/>
-					</section>
-
-					<footer class={`-mt-1 mb-3 text-center ${gridSize === 'small' ? 'text-xs' : 'text-base'}`}>
-						{file.thumbnail.name}
-					</footer>
+			{#if filteredFiles.length === 0}
+				<!-- Display a message when no media is found -->
+				<div class="mx-auto text-center text-tertiary-500 dark:text-primary-500">
+					<iconify-icon icon="bi:exclamation-circle-fill" height="44" class="mb-2" />
+					<p class="text-lg">{m.mediagallery_nomedia()}</p>
 				</div>
-			{/each}
+			{:else}
+				{#each filteredFiles as file, index}
+					<div
+						on:mouseenter={() => (showInfo[index] = true)}
+						on:mouseleave={() => (showInfo[index] = false)}
+						role="button"
+						tabindex="0"
+						class="card border border-surface-300 dark:border-surface-500"
+					>
+						<header class="m-2 flex w-auto items-center justify-between">
+							<!-- Info Icon -->
+							<button class="btn-icon" use:popup={FileTooltip}>
+								<iconify-icon icon="raphael:info" width="24" class="text-tertiary-500 dark:text-primary-500"></iconify-icon>
+							</button>
+
+							<!-- Popup Tooltip with the arrow element to show FileInfo -->
+							<div class="card variant-filled z-50 min-w-[250px] p-2" data-popup="FileInfo">
+								<table class="table-hover w-full table-auto">
+									<thead class="text-tertiary-500">
+										<tr class="divide-x divide-surface-400 border-b-2 border-surface-400 text-center">
+											<th class="text-left">{m.mediagallery_Format()}</th>
+											<th class="">{m.mediagallery_Pixel()}</th>
+											<th class="">{m.mediagallery_size()}</th>
+										</tr>
+									</thead>
+									<tbody>
+										{#each orderedSizes as size}
+											{#if file[size]}
+												<!-- Check if file[size] is defined -->
+												<tr class="divide-x divide-surface-400 border-b border-surface-400 last:border-b-0">
+													<td class="font-bold text-tertiary-500">
+														{size}
+													</td>
+													<td class="pr-1 text-right">
+														{#if file[size].width && file[size].height}
+															<!-- Check if width and height are defined -->
+															{file[size].width}x{file[size].height}
+														{:else}
+															N/A <!-- Display N/A if width or height is not defined -->
+														{/if}
+													</td>
+													<td class="text-right">
+														{#if file[size].size}
+															<!-- Check if size is defined -->
+															{formatBytes(file[size].size)}
+														{:else}
+															N/A <!-- Display N/A if size is not defined -->
+														{/if}
+													</td>
+												</tr>
+											{/if}
+										{/each}
+									</tbody>
+									<div class="variant-filled arrow" />
+								</table>
+							</div>
+							<!--{#if showInfo[index]}-->
+							<!-- Edit button -->
+							<button class="btn-icon">
+								<iconify-icon icon="mdi:pen" width="24" class="data:text-primary-500 text-tertiary-500" />
+							</button>
+
+							<!-- Delete button -->
+							<button class="btn-icon" on:click={() => handleDeleteImage(file)}>
+								<!-- Delete Icon -->
+								<iconify-icon icon="icomoon-free:bin" width="24" class="text-error-500" />
+							</button>
+							<!--{/if}-->
+						</header>
+
+						<section class="p-2">
+							<!-- Media File -->
+							<img
+								src={file.thumbnail.url}
+								alt={file.thumbnail.name}
+								class={`relative -top-4 left-0 ${gridSize === 'small' ? 'h-26 w-26' : gridSize === 'medium' ? 'h-48 w-48' : 'h-80 w-80'}`}
+							/>
+						</section>
+
+						<footer class={`-mt-1 mb-3 text-center ${gridSize === 'small' ? 'text-xs' : 'text-base'}`}>
+							{file.thumbnail.name}
+						</footer>
+					</div>
+				{/each}
+			{/if}
 		</div>
 	{:else}
 		<!-- Table for table view -->

@@ -1,9 +1,12 @@
+/**
+ * Do not Edit as the file will be overwritten by Cli Installer !!!
+ * Rather use 'npm installer' to start the installer
+ *
+ * The PUBLIC configuration for the application,
+ */
+
 import { createPublicConfig } from './types';
 
-/**
- * The PUBLIC configuration for the application,
- * if changes are made please rebuild/restart your instance
- */
 export const publicEnv = createPublicConfig({
 	// The name of the site that this CMS should get.  (default: 'SveltyCMS')
 	SITE_NAME: 'SveltyCMS',
@@ -64,6 +67,9 @@ export const publicEnv = createPublicConfig({
 	// Define you hostname where you site is running in development/production
 	HOST_DEV: 'http://localhost:5173',
 	HOST_PROD: 'https://yourdomain.de',
+
+	// Overwrite the default Password strength (default 8)
+	PASSWORD_STRENGTH: 8,
 
 	// Seasons/Events for login page (default: false)
 	SEASONS: false, // Set to true to enable seasonal decorations

@@ -18,6 +18,7 @@
 	import FloatingInput from '@components/system/inputs/floatingInput.svelte';
 	import SveltyCMSLogo from '@components/system/icons/SveltyCMS_Logo.svelte';
 	import SveltyCMSLogoFull from '@components/system/icons/SveltyCMS_LogoFull.svelte';
+	import PasswordStrength from '@src/components/PasswordStrength.svelte';
 
 	// ParaglideJS
 	import * as m from '@src/paraglide/messages';
@@ -217,6 +218,8 @@
 					<span class="text-xs text-error-500">{response} </span>
 				{/if}
 
+				<!-- <PasswordStrength password={$form.password} />  -->
+
 				{#if privateEnv.USE_GOOGLE_OAUTH === false}
 					<!-- Email signin only -->
 					<button type="submit" class="variant-filled btn mt-4 uppercase"
@@ -233,7 +236,7 @@
 							<!-- Loading indicators -->
 							{#if $delayed}<img src="/Spinner.svg" alt="Loading.." class="ml-4 h-6" />{/if}
 						</button>
-						<form method="post" action="?/OAuth" class="w-fit">
+						<form method="post" action="?/OAuth" class="w-1/4">
 							<button type="submit" class="btn w-full">
 								<iconify-icon icon="flat-color-icons:google" color="white" width="20" class="mr-2" />
 								<span class="">OAuth</span>

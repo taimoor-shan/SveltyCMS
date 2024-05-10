@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { dev } from '$app/environment';
 	import { publicEnv } from '@root/config/public';
-	import { asAny, getFieldName } from '@utils/utils';
+	import { asAny, getFieldName, pascalToCamelCase } from '@utils/utils';
 
 	// Auth
 	const user = $page.data.user;
@@ -22,6 +22,8 @@
 	export let customData = {};
 
 	$: if (root) $collectionValue = fieldsData;
+
+	const modules = import.meta.glob('@src/components/widgets/*/*.svelte');
 
 	let apiUrl = '';
 
@@ -88,7 +90,7 @@
 							{#key $collection}
 								<div
 									class="mx-auto text-center {!field?.width ? 'w-full ' : 'max-md:!w-full'}"
-									style={'min-width:min(300px,100%);' + (field?.width ? `width:calc(${Math.floor(100 / field?.width)}% - 0.5rem)` : '')}
+									style={'min-width:min(300px,100%);' + (field.width ? `width:calc(${Math.floor(100 / field?.width)}% - 0.5rem)` : '')}
 								>
 									<!-- Widget label -->
 									<div class="flex justify-between px-[5px] text-start">
@@ -125,14 +127,15 @@
 									</div>
 
 									<!-- Widget Input -->
-									<svelte:component
-										this={asAny(field.widget.type)}
-										field={asAny(field)}
-										bind:WidgetData={fieldsData[getFieldName(field)]}
-										disabled={field?.permissions?.[user.role]?.write == false && false}
-										value={customData[getFieldName(field)]}
-										{...$$props}
-									/>
+									{#await modules[`/src/components/widgets/${pascalToCamelCase(field.widget.Name)}/${field.widget.Name}.svelte`]() then widget}
+										<svelte:component
+											this={asAny(widget).default}
+											field={asAny(field)}
+											bind:WidgetData={fieldsData[getFieldName(field)]}
+											value={customData[getFieldName(field)]}
+											{...$$props}
+										/>
+									{/await}
 								</div>
 							{/key}
 						{/if}
@@ -187,7 +190,7 @@
 			{#if $entryData == null}
 				<div class="variant-ghost-error mb-4 py-2 text-center font-bold">{m.fields_api_nodata()}</div>
 			{:else}
-				<div class="wrapper mb-4 flex w-full items-center justify-start gap-1">
+				<div class="wrapper relative z-0 mb-4 flex w-full items-center justify-start gap-1">
 					<!-- label -->
 					<p class="flex items-center">
 						<span class="mr-1">API URL:</span>

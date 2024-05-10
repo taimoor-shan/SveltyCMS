@@ -8,10 +8,13 @@ import type { Schema } from '@collections/types';
 import { browser } from '$app/environment';
 import _crypto from 'crypto';
 import type { z } from 'zod';
+import type { MediaImage } from './types';
+
+// pdf.js
 
 // Stores
 import { get } from 'svelte/store';
-import { translationProgress, contentLanguage, entryData, mode, collections, collection } from '@stores/store';
+import { translationProgress, contentLanguage, entryData, mode, collections, collection, collectionValue } from '@stores/store';
 
 // Auth
 import { UserSchema } from '@src/auth/types';
@@ -75,7 +78,7 @@ export const col2formData = async (getData: { [Key: string]: () => any }) => {
 				continue;
 			}
 			// object[key] is file here
-			const uuid = crypto.randomUUID();
+			const uuid = createRandomID().toString();
 			formData.append(uuid, object[key]);
 			object[key] = { instanceof: 'File', id: uuid, path: object[key].path };
 		}
@@ -107,138 +110,153 @@ export function sanitize(str: string) {
 	return str.replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_]/g, '');
 }
 
+// Utility to hash file content
+function hashFileContent(buffer: Buffer): string {
+	return _crypto.createHash('sha256').update(buffer).digest('hex').slice(0, 20);
+}
+
+// Utility to sanitize and prepare file names
+function getSanitizedFileName(fileName: string): { fileNameWithoutExt: string; ext: string } {
+	const ext = Path.extname(fileName).toLowerCase();
+	const fileNameWithoutExt = sanitize(Path.basename(fileName, ext));
+	return { fileNameWithoutExt, ext };
+}
+
+export async function saveMedia(type, file, collectionName) {
+	switch (type) {
+		case 'image':
+			return await saveImage(file, collectionName);
+		case 'document':
+			return await saveDocument(file, collectionName);
+		case 'audio':
+			return await saveAudio(file, collectionName);
+		case 'video':
+			return await saveVideo(file, collectionName);
+		case 'remote':
+			return await saveRemoteMedia(file, collectionName);
+		default:
+			throw new Error(`Unsupported media type: ${type}`);
+	}
+}
+
 // Get the environment variables for image sizes
 const env_sizes = publicEnv.IMAGE_SIZES;
 export const SIZES = { ...env_sizes, original: 0, thumbnail: 200 } as const;
+
 // Saves image to disk and returns file information
-export async function saveImages(data: { [key: string]: any }, collectionName: string) {
-	if (browser) return;
-	const sharp = (await import('sharp')).default;
-	const fields: { file: any; replace: (id: string) => void }[] = [];
-	const parseFiles = async (data: any) => {
-		for (const fieldname in data) {
-			if (!(data[fieldname] instanceof File) && typeof data[fieldname] == 'object') {
-				await parseFiles(data[fieldname]);
-				continue;
-			} else if (!(data[fieldname] instanceof File)) {
-				continue;
+export async function saveImage(file: File, collectionName: string): Promise<{ id: mongoose.Types.ObjectId; fileInfo: MediaImage }> {
+	try {
+		if (browser) return {} as any;
+		const sharp = (await import('sharp')).default;
+
+		let fileInfo = {};
+
+		const arrayBuffer = await file.arrayBuffer();
+		const buffer = Buffer.from(arrayBuffer);
+		const hash = _crypto.createHash('sha256').update(buffer).digest('hex').slice(0, 20);
+		const existing_file = await mongoose.models['media_images'].findOne({ hash: hash });
+		const path = file.path || 'global'; // 'global' | 'unique' | 'collection'
+		const { name: fileNameWithoutExt, ext } = removeExtension(file.name); // / Extract name without extension
+		const sanitizedBlobName = sanitize(fileNameWithoutExt); // Sanitize the name to remove special characters
+
+		if (existing_file) {
+			return { id: new mongoose.Types.ObjectId(existing_file._id), fileInfo: existing_file };
+		}
+
+		// Original image URL construction
+		let url: string;
+		if (path == 'global') {
+			url = `${publicEnv.MEDIA_FOLDER}/original/${hash}-${sanitizedBlobName}.${ext}`;
+		} else if (path == 'unique') {
+			url = `${publicEnv.MEDIA_FOLDER}/${collectionName}/original/${hash}-${sanitizedBlobName}.${ext}`;
+		} else {
+			url = `${publicEnv.MEDIA_FOLDER}/${path}/original/${hash}-${sanitizedBlobName}.${ext}`;
+		}
+
+		// Prepend MEDIASERVER_URL if it's set
+		if (publicEnv.MEDIASERVER_URL) {
+			url = `${publicEnv.MEDIASERVER_URL}/files/${url}`;
+		}
+
+		const info = await sharp(buffer).metadata();
+		// Construct default file information
+		fileInfo = {
+			hash,
+			original: {
+				name: `${hash}-${file.name}`,
+				url,
+				type: file.type,
+				size: file.size,
+				width: info.width,
+				height: info.height
+				// createdAt: new Date(),
+				// lastModified: new Date(file.lastModified)
 			}
+		};
 
-			const blob = data[fieldname] as File;
-			const arrayBuffer = await blob.arrayBuffer();
-			const buffer = Buffer.from(arrayBuffer);
-			const hash = _crypto.createHash('sha256').update(buffer).digest('hex').slice(0, 20);
-			const existing_file = await mongoose.models['media_images'].findOne({ hash: hash });
+		if (!fs.existsSync(Path.dirname(`${publicEnv.MEDIA_FOLDER}/${url}`))) {
+			fs.mkdirSync(Path.dirname(`${publicEnv.MEDIA_FOLDER}/${url}`), { recursive: true });
+		}
 
-			if (existing_file) {
-				data[fieldname] = existing_file._id.toString; // ObjectID to string
-				continue;
-			}
+		fs.writeFileSync(`${publicEnv.MEDIA_FOLDER}/${url}`, buffer);
 
-			const path = blob.path; // 'global' | 'unique' | 'collection'
-			const { name: fileNameWithoutExt, ext } = removeExtension(blob.name); // / Extract name without extension
-			const sanitizedBlobName = sanitize(fileNameWithoutExt); // Sanitize the name to remove special characters
+		for (const size in SIZES) {
+			if (size == 'original') continue;
 
-			// Original image URL construction
+			const fullName = `${hash}-${sanitizedBlobName}.${publicEnv.MEDIA_OUTPUT_FORMAT_QUALITY.format}`;
+			const resizedImage = await sharp(buffer)
+				.rotate() // Rotate image according to EXIF data
+				.resize({ width: SIZES[size] })
+				.toFormat(publicEnv.MEDIA_OUTPUT_FORMAT_QUALITY.format as keyof import('sharp').FormatEnum, {
+					quality: publicEnv.MEDIA_OUTPUT_FORMAT_QUALITY.quality
+				})
+				.toBuffer({ resolveWithObject: true });
+
+			// Save resized image URL construction
 			let url: string;
 			if (path == 'global') {
-				url = `original/${hash}-${sanitizedBlobName}.${ext}`;
+				url = `${size}/${fullName}`;
 			} else if (path == 'unique') {
-				url = `${collectionName}/original/${hash}-${sanitizedBlobName}.${ext}`;
+				url = `${collectionName}/${size}/${fullName}`;
 			} else {
-				url = `${path}/original/${hash}-${sanitizedBlobName}.${ext}`;
+				url = `${path}/${size}/${fullName}`;
 			}
 
 			// Prepend MEDIASERVER_URL if it's set
 			if (publicEnv.MEDIASERVER_URL) {
-				url = `${publicEnv.MEDIASERVER_URL}/files/${url}`;
+				url = `${publicEnv.MEDIASERVER_URL}/${url}`;
 			}
-
-			const info = await sharp(buffer).metadata();
-			data[fieldname] = {
-				hash,
-				original: {
-					name: `${hash}-${blob.name}`,
-					url,
-					type: blob.type,
-					size: blob.size,
-					width: info.width,
-					height: info.height,
-					createdAt: new Date(),
-					lastModified: new Date(blob.lastModified)
-				}
-			};
 
 			if (!fs.existsSync(Path.dirname(`${publicEnv.MEDIA_FOLDER}/${url}`))) {
 				fs.mkdirSync(Path.dirname(`${publicEnv.MEDIA_FOLDER}/${url}`), { recursive: true });
 			}
 
-			fs.writeFileSync(`${publicEnv.MEDIA_FOLDER}/${url}`, buffer);
-			for (const size in SIZES) {
-				if (size == 'original') continue;
-
-				const fullName = `${hash}-${sanitizedBlobName}.${publicEnv.MEDIA_OUTPUT_FORMAT_QUALITY.format}`;
-				const resizedImage = await sharp(buffer)
-					.rotate() // Rotate image according to EXIF data
-					.resize({ width: SIZES[size] })
-					.toFormat(publicEnv.MEDIA_OUTPUT_FORMAT_QUALITY.format as keyof import('sharp').FormatEnum, {
-						quality: publicEnv.MEDIA_OUTPUT_FORMAT_QUALITY.quality
-					})
-					.toBuffer({ resolveWithObject: true });
-
-				// Save resized image URL construction
-				let url: string;
-				if (path == 'global') {
-					url = `${size}/${fullName}`;
-				} else if (path == 'unique') {
-					url = `${collectionName}/${size}/${fullName}`;
-				} else {
-					url = `${path}/${size}/${fullName}`;
-				}
-
-				// Prepend MEDIASERVER_URL if it's set
-				if (publicEnv.MEDIASERVER_URL) {
-					url = `${publicEnv.MEDIASERVER_URL}/${url}`;
-				}
-
-				if (!fs.existsSync(Path.dirname(`${publicEnv.MEDIA_FOLDER}/${url}`))) {
-					fs.mkdirSync(Path.dirname(`${publicEnv.MEDIA_FOLDER}/${url}`), { recursive: true });
-				}
-				// Sized images
-				fs.writeFileSync(`${publicEnv.MEDIA_FOLDER}/${url}`, resizedImage.data);
-				data[fieldname][size] = {
-					name: `${fileNameWithoutExt}.${publicEnv.MEDIA_OUTPUT_FORMAT_QUALITY.format}`,
-					url,
-					type: `image/${publicEnv.MEDIA_OUTPUT_FORMAT_QUALITY.format}`,
-					size: resizedImage.info.size,
-					width: resizedImage.info.width,
-					height: resizedImage.info.height,
-					createdAt: new Date(),
-					lastModified: new Date(blob.lastModified)
-				};
-			}
-			fields.push({
-				file: data[fieldname],
-				replace: (id) => {
-					data[fieldname] = id; // `id` is an ObjectId
-				}
-			});
+			// Resized images are saved as SIZES
+			fs.writeFileSync(`${publicEnv.MEDIA_FOLDER}/${url}`, resizedImage.data);
+			fileInfo[size] = {
+				name: `${fileNameWithoutExt}.${publicEnv.MEDIA_OUTPUT_FORMAT_QUALITY.format}`,
+				url,
+				type: `image/${publicEnv.MEDIA_OUTPUT_FORMAT_QUALITY.format}`,
+				size: resizedImage.info.size,
+				width: resizedImage.info.width,
+				height: resizedImage.info.height
+				// createdAt: new Date(),
+				// lastModified: new Date(file.lastModified)
+			};
 		}
-	};
 
-	await parseFiles(data);
+		const res = await mongoose.models['media_images'].insertMany(fileInfo);
 
-	const res = await mongoose.models['media_images'].insertMany(fields.map((v) => v.file));
-
-	for (const index in res) {
-		const id = res[index]._id;
-		fields[index].replace(id); // `id` is an ObjectId
+		return { id: new mongoose.Types.ObjectId(res[0]._id), fileInfo: fileInfo as MediaImage };
+	} catch (error) {
+		console.error('Error saving image:', error);
+		// Handle error appropriately, e.g., return null or throw an error
+		throw error;
 	}
 }
 
-// TODO: Add PDF/Doc Thumbnails
 // Save files and returns file information
-export async function saveFiles(data: { [key: string]: any }, collectionName: string) {
+export async function saveDocument(file: File, collectionName: string) {
 	if (browser) return;
 	const fields: { file: any; replace: (id: string) => void }[] = [];
 	const parseFiles = async (data: any) => {
@@ -254,7 +272,7 @@ export async function saveFiles(data: { [key: string]: any }, collectionName: st
 			const arrayBuffer = await blob.arrayBuffer();
 			const buffer = Buffer.from(arrayBuffer);
 			const hash = _crypto.createHash('sha256').update(buffer).digest('hex').slice(0, 20);
-			const existing_file = await mongoose.models['media_files'].findOne({ hash: hash });
+			const existing_file = await mongoose.models['media_documents'].findOne({ hash: hash });
 			if (existing_file) {
 				data[fieldname] = existing_file._id.toString(); // ObjectID to string
 				continue;
@@ -284,9 +302,9 @@ export async function saveFiles(data: { [key: string]: any }, collectionName: st
 					name: `${hash}-${blob.name}`,
 					url,
 					type: blob.type,
-					size: blob.size,
-					createdAt: new Date(),
-					lastModified: new Date(blob.lastModified)
+					size: blob.size
+					// createdAt: new Date(),
+					// lastModified: new Date(blob.lastModified)
 				}
 			};
 
@@ -305,13 +323,118 @@ export async function saveFiles(data: { [key: string]: any }, collectionName: st
 		}
 	};
 
-	await parseFiles(data);
+	await parseFiles(file);
 
-	const res = await mongoose.models['media_files'].insertMany(fields.map((v) => v.file));
+	const res = await mongoose.models['media_documents'].insertMany(fields.map((v) => v.file));
 
 	for (const index in res) {
 		const id = res[index]._id;
 		fields[index].replace(id); // `id` is an ObjectId
+	}
+}
+
+// Implement the saveVideo function to handle video files
+export async function saveVideo(file: File, collectionName: string) {
+	try {
+		const buffer = Buffer.from(await file.arrayBuffer());
+		const hash = hashFileContent(buffer);
+		const { fileNameWithoutExt, ext } = getSanitizedFileName(file.name);
+		const iconName = 'video-icon.svg'; // Assuming an icon file is stored locally or remotely
+
+		const fileInfo = {
+			name: `${hash}-${fileNameWithoutExt}.${ext}`,
+			type: file.type,
+			size: file.size,
+			icon: iconName // URL to the icon
+			// createdAt: new Date(),
+			// lastModified: new Date(file.lastModified)
+		};
+
+		// Store the file in the appropriate location
+		const filePath = `${publicEnv.MEDIA_FOLDER}/${collectionName}/video/${fileInfo.name}`;
+		if (!fs.existsSync(Path.dirname(filePath))) {
+			fs.mkdirSync(Path.dirname(filePath), { recursive: true });
+		}
+		fs.writeFileSync(filePath, buffer);
+
+		// Save fileInfo to database
+		const res = await mongoose.models['media_videos'].insertMany([fileInfo]);
+		return new mongoose.Types.ObjectId(res[0]._id);
+	} catch (error) {
+		console.error('Error saving video:', error);
+		throw error;
+	}
+}
+
+// Implement the saveAudio function to handle audio files
+export async function saveAudio(file: File, collectionName: string) {
+	try {
+		const buffer = Buffer.from(await file.arrayBuffer());
+		const hash = hashFileContent(buffer);
+		const { fileNameWithoutExt, ext } = getSanitizedFileName(file.name);
+		const iconName = 'audio-icon.svg'; // Assuming an icon file is stored locally or remotely
+
+		const fileInfo = {
+			name: `${hash}-${fileNameWithoutExt}.${ext}`,
+			type: file.type,
+			size: file.size,
+			icon: iconName // URL to the icon
+			// createdAt: new Date(),
+			// lastModified: new Date(file.lastModified)
+		};
+
+		// Store the file in the appropriate location
+		const filePath = `${publicEnv.MEDIA_FOLDER}/${collectionName}/audio/${fileInfo.name}`;
+		if (!fs.existsSync(Path.dirname(filePath))) {
+			fs.mkdirSync(Path.dirname(filePath), { recursive: true });
+		}
+		fs.writeFileSync(filePath, buffer);
+
+		// Save fileInfo to database
+		const res = await mongoose.models['media_audios'].insertMany([fileInfo]);
+		return new mongoose.Types.ObjectId(res[0]._id);
+	} catch (error) {
+		console.error('Error saving audio:', error);
+		throw error;
+	}
+}
+
+// Implement the saveRemoteMedia function to handle remote video files
+export async function saveRemoteMedia(fileUrl: string, collectionName: string): Promise<mongoose.Types.ObjectId> {
+	try {
+		const response = await fetch(fileUrl);
+		if (!response.ok) throw new Error(`Failed to fetch file: ${response.statusText}`);
+		const buffer = Buffer.from(await response.arrayBuffer());
+		const hash = hashFileContent(buffer);
+		const fileName = decodeURI(fileUrl.split('/').pop() ?? 'defaultName'); // Safeguard default name
+		const { fileNameWithoutExt, ext } = getSanitizedFileName(fileName);
+
+		// Construct file URL or path where the file will be stored
+		const url = `path_or_url_where_files_are_stored/${hash}-${fileNameWithoutExt}.${ext}`;
+
+		const fileInfo = {
+			name: `${hash}-${fileNameWithoutExt}.${ext}`,
+			url,
+			hash,
+			createdAt: new Date()
+		};
+
+		// Save fileInfo to database using the collectionName
+		const MediaModel = mongoose.model(
+			collectionName,
+			new mongoose.Schema({
+				name: String,
+				url: String,
+				hash: String
+				// createdAt: Date
+			})
+		);
+
+		const res = await MediaModel.create(fileInfo);
+		return new mongoose.Types.ObjectId(res._id);
+	} catch (error) {
+		console.error('Error saving remote media:', error);
+		throw error;
 	}
 }
 
@@ -397,6 +520,7 @@ export async function saveFormData({ data, _collection, _mode, id }: { data: any
 		throw new Error('ID is required for edit mode.');
 	}
 	if (!formData) return;
+	if (!meta_data.is_empty()) formData.append('_meta_data', JSON.stringify(meta_data.get()));
 
 	// Define status for each collection
 	formData.append('status', $collection.status || 'unpublished');
@@ -825,4 +949,40 @@ export const get_elements_by_id = {
 			}
 		}
 	}
+};
+
+export const createRandomID = (id?: string) => {
+	return id ? new mongoose.Types.ObjectId(id) : new mongoose.Types.ObjectId();
+};
+
+export const meta_data: {
+	meta_data: { [key: string]: any };
+	add: (key: 'media_images_remove', data: string[]) => void;
+	clear: () => void;
+	get: () => { [key: string]: any };
+	is_empty: () => boolean;
+	media_images?: { removed: string[] }; // Define the media_images property as optional
+} = {
+	meta_data: {},
+	add(key, data) {
+		switch (key) {
+			case 'media_images_remove':
+				if (!this.meta_data?.media_images) this.meta_data.media_images = { removed: [] };
+				this.meta_data.media_images.removed.push(...data);
+				break;
+		}
+	},
+	get() {
+		return this.meta_data;
+	},
+	clear() {
+		this.meta_data = {};
+	},
+	is_empty() {
+		return Object.keys(this.meta_data).length === 0;
+	}
+};
+
+export const pascalToCamelCase = (str: string) => {
+	return str.substring(0, 0) + str.charAt(0).toLowerCase() + str.substring(1);
 };

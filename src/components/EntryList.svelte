@@ -1,6 +1,6 @@
 <script lang="ts">
 	import axios from 'axios';
-	import { asAny, debounce, getFieldName } from '@src/utils/utils';
+	import { asAny, debounce, getFieldName, meta_data } from '@src/utils/utils';
 
 	// Stores
 	import { get } from 'svelte/store';
@@ -238,8 +238,8 @@
 	// Trigger refreshTableData when contentLanguage changes, but don't fetch data
 	$: {
 		refreshTableData(false);
-		$contentLanguage;
 		filters = {};
+		$contentLanguage;
 	}
 	// Reset currentPage to 1 when the collection changes
 	$: {
@@ -267,6 +267,14 @@
 
 	// Update Tick Single Row
 	$: Object.values(selectedMap).includes(true) ? mode.set('modify') : mode.set('view');
+
+	// Reset entryData when mode changes
+	mode.subscribe(() => {
+		meta_data.clear();
+		if ($mode == 'view') {
+			entryData.set({});
+		}
+	});
 
 	// Columns Sorting
 	let sorting: { sortedBy: string; isSorted: 0 | 1 | -1 } = localStorage.getItem('sorting')
@@ -728,9 +736,9 @@
 		</div>
 	{:else}
 		<!-- Display a message when no data is yet available -->
-		<div class="text-center">
-			<iconify-icon icon="bi:exclamation-circle-fill" height="44" class="mb-2 text-primary-500" />
-			<p class="text-lg text-primary-500">
+		<div class="text-center text-tertiary-500 dark:text-primary-500">
+			<iconify-icon icon="bi:exclamation-circle-fill" height="44" class="mb-2" />
+			<p class="text-lg">
 				No {$collection.name} Data
 			</p>
 		</div>
